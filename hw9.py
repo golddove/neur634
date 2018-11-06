@@ -378,36 +378,42 @@ def plot_spike_tables(tables):
 #    for spikeTable in spikeTables:
 
 
-def createSynapse(comp, numInputs):
-    synchan = moose.SynChan(comp.path + "/synchan")
-    synchan.Gbar = 1e-8
-    synchan.tau1 = 2e-3
-    synchan.tau2 = 2e-3
-    synchan.Ek = -0.01
+# name is the name of this synapse type (e.g. "excitatory")
+# Ek is reversal potential?
+def createSynapse(comp, name, numInputs, Ek, gbar = 1e-9, tau1 = 1e-3, tau2 = 5e-3):
+    path = comp.path + "/" + name
+    if(moose.exists(path + "synchan")):
+        return moose.element(path + "synhandler")
+    synchan = moose.SynChan(path + "synchan")
+    synchan.Gbar = gbar
+    synchan.tau1 = tau1
+    synchan.tau2 = tau2
+    synchan.Ek = Ek
     moose.connect(comp,"channel",synchan,"channel")
-    sh = moose.SimpleSynHandler(comp.path + "/synhandler")
+    sh = moose.SimpleSynHandler(path + "synhandler")
     moose.connect(sh, "activationOut", synchan, "activation")
     sh.synapse.num = numInputs
     for i in range(numInputs):
         sh.synapse[i].delay = 5e-3
     return sh
 
-def createRandSpike(path):
+def createRandSpike(path, rate):
     spike = moose.RandSpike(path)
-    spike.rate = 130
+    spike.rate = rate
     spike.refractT = 1e-3
     return spike
 
-def createRandomSynapse(comp, numInputs):
-    sh = createSynapse(comp, numInputs)
+# name is the name of this synapse type (e.g. "excitatory")
+def createRandomSynapse(comp, name, Ek = 0, rate = 300, numInputs = 1):
+    sh = createSynapse(comp, name, numInputs, Ek)
     preSyns = []
     for i in range(numInputs):
-        preSyns.append(createRandSpike("preSyn" + str(i)))
+        preSyns.append(createRandSpike(comp.path + "/" + name + "preSyn" + str(i), rate))
         moose.connect(preSyns[i], "spikeOut", sh.synapse[i], "addSpike")
     return sh, preSyns
 
 def main():
-    simtime = 0.1
+    simtime = 1
     simdt = 0.25e-5
     plotdt = 0.25e-3
     for i in range(10):
@@ -416,9 +422,11 @@ def main():
     
     model = moose.Neutral('/model')
     comp = create_1comp_neuron('/model/neuron')
-    sh, preSyns = createRandomSynapse(comp, 2)
+    sh, preSyns = createRandomSynapse(comp, "excitatory", 0, 10)
+    sh2, preSyns2 = createRandomSynapse(comp, "inhibitory", -80, 2)
+    moose.le("/model/neuron")
 
-    stim = create_pulse("/model/stimulus", 20e-3, 40e-3, 1e-9, comp)
+    # stim = create_pulse("/model/stimulus", 20e-3, 40e-3, 1e-9, comp)
 
     data = moose.Neutral('/data')
     preTables = []
@@ -433,12 +441,12 @@ def main():
     plot_spike_tables(preTables)
 
         
-    current_tab = create_table("/data/current", stim, "getOutputValue")
+    # current_tab = create_table("/data/current", stim, "getOutputValue")
     vm_tab = create_table("/data/Vm", comp, "getVm")
     moose.reinit()
     moose.start(simtime)
     #ts = np.linspace(0, simtime, len(vm_tab.vector))
-    plot_tables([vm_tab, current_tab])
+    plot_table(vm_tab)#, current_tab
 
 if __name__ == '__main__':
     main()
